@@ -1,9 +1,8 @@
 package com.example.myapplication
 
 import android.Manifest
-import android.R.attr.path
-import android.R.string
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +19,10 @@ import com.downloader.PRDownloader
 import com.downloader.PRDownloaderConfig
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.content_main.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -28,7 +31,7 @@ import java.util.*
 class MainActivity : AppCompatActivity(), View.OnClickListener {
 
     val REQUEST_CODE = 1001
-    val TAG = MainActivity::class.java.name
+    val TAG = "MainActivity"
 
     val STATUS_DOWNLOADING = 1
     val STATUS_PAUSED = 2
@@ -37,8 +40,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
 
     var currentStatus = 0
 
-    var DOWNLOAD_SYNC = 10
-    var DOWNLOAD_ASYNC = 11
+    val DOWNLOAD_SYNC = 10
+    val DOWNLOAD_ASYNC = 11
     var downloadState = DOWNLOAD_ASYNC
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,11 +93,10 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         txtSync.setOnClickListener(this)
         txtAsync.setOnClickListener(this)
         btnDownload.setOnClickListener(this)
-        selected(DOWNLOAD_ASYNC)
+        selected(DOWNLOAD_SYNC)
     }
 
     fun selected(value: Int) {
-        downloadState == value
         when (value) {
             DOWNLOAD_SYNC -> {
                 txtSync.isSelected = true
@@ -114,66 +116,105 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
     override fun onClick(v: View?) {
         when (v?.id) {
             R.id.txtSync -> {
+                downloadState == DOWNLOAD_SYNC
                 selected(DOWNLOAD_SYNC)
             }
             R.id.txtAsync -> {
+                downloadState == DOWNLOAD_ASYNC
                 selected(DOWNLOAD_ASYNC)
             }
             R.id.btnDownload -> {
+                Log.d(TAG, "downloadState -> "+downloadState)
                 if (downloadState == DOWNLOAD_ASYNC) {
                     downloadAsyncronusly()
+                } else {
+                    downloadSyncronusly()
                 }
             }
         }
     }
 
-    private fun downloadAsyncronusly() {
+    fun downloadSyncronusly() {
+        CoroutineScope(Dispatchers.Default).launch() {
+            getBitmapAndSaveSync(
+                getString(R.string.image_link_1),
+                getDirectoryPath()!!,
+                createImageFile(1)!!,
+                progress1
+            )
+
+            getBitmapAndSaveSync(
+                getString(R.string.image_link_2),
+                getDirectoryPath()!!,
+                createImageFile(2)!!,
+                progress2
+            )
+
+            getBitmapAndSaveSync(
+                getString(R.string.image_link_3),
+                getDirectoryPath()!!,
+                createImageFile(3)!!,
+                progress3
+            )
+
+            getBitmapAndSaveSync(
+                getString(R.string.image_link_4),
+                getDirectoryPath()!!,
+                createImageFile(4)!!,
+                progress4
+            )
+        }
+    }
+
+    fun downloadAsyncronusly() {
         getBitmapAndSave(
             getString(R.string.image_link_1),
             getDirectoryPath()!!,
-            createImageFile()!!,
+            createImageFile(1)!!,
             progress1
         )
 
         getBitmapAndSave(
             getString(R.string.image_link_2),
             getDirectoryPath()!!,
-            createImageFile()!!,
+            createImageFile(2)!!,
             progress2
         )
 
         getBitmapAndSave(
             getString(R.string.image_link_3),
             getDirectoryPath()!!,
-            createImageFile()!!,
+            createImageFile(3)!!,
             progress3
         )
 
         getBitmapAndSave(
             getString(R.string.image_link_4),
             getDirectoryPath()!!,
-            createImageFile()!!,
+            createImageFile(4)!!,
             progress4
         )
     }
 
     private fun getDirectoryPath(): String? {
-        val dir =
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                .toString() + "/App Folder/"
-
+//        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString()/* + "/Sample"*/
+        val dir = Environment.getDownloadCacheDirectory().toString()
         val dirFile = File(dir)
-        dirFile.mkdirs()
+        if (!dirFile.exists())
+            dirFile.mkdirs()
         return dirFile.absolutePath
     }
 
-    private fun createImageFile(): String? {
-        val dirPath = getDirectoryPath()
-        // Create an image file name
-        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
-        val imageFileName = "AppName_$timeStamp"
-        val file = "$dirPath$imageFileName.jpg"
-        val imageFile = File(file)
+    private fun createImageFile(value: Int): String? {
+        val timeStamp: String = SimpleDateFormat("HHmmss").format(Date())
+        val imageFileName = "AppName_$timeStamp$value"
+
+        val file = File(this@MainActivity.filesDir, "image")
+        if (!file.exists()) {
+            file.mkdir()
+        }
+        val imageFile = File(file, imageFileName + ".jpg")
+        Log.d(TAG, "createImageFile -> " + imageFile)
         return imageFile.absolutePath
     }
 
@@ -184,6 +225,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         fileName: String,
         progressBar: ProgressBar
     ) {
+        Log.d(TAG, "getBitmapAndSave called")
         progressBar.visibility = View.VISIBLE
         val downloadId = PRDownloader.download(url, path, fileName)
             .build()
@@ -196,11 +238,13 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             .setOnCancelListener(object : OnCancelListener {
                 override fun onCancel() {
                     currentStatus = STATUS_CANCELLED
+                    Log.e(TAG, "onCancel executed")
                 }
             })
             .setOnProgressListener { progress ->
                 val value = (progress.currentBytes / progress.totalBytes) * 100
                 progressBar.progress = value.toInt()
+                Log.d(TAG, "OnProgress -> " + value)
             }
             .start(object : OnDownloadListener {
                 override fun onDownloadComplete() {
@@ -209,6 +253,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
 
                 override fun onError(error: com.downloader.Error?) {
                     currentStatus = STATUS_ERROR
+                    error?.connectionException?.printStackTrace()
+                    Log.e(TAG, error?.serverErrorMessage + ", " + error?.isConnectionError + ", ")
                 }
             })
     }
@@ -222,5 +268,48 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         if (grantResults.size > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Permission Granted")
         }
+    }
+
+    suspend fun getBitmapAndSaveSync(
+        url: String,
+        path: String,
+        fileName: String,
+        progressBar: ProgressBar
+    ) = suspendCancellableCoroutine<Unit> { cont ->
+
+        cont.invokeOnCancellation { cont.cancel() }
+        Log.d(TAG, "getBitmapAndSaveSync called")
+        progressBar.visibility = View.VISIBLE
+        val downloadId = PRDownloader.download(url, path, fileName)
+            .build()
+            .setOnStartOrResumeListener {
+                currentStatus = STATUS_DOWNLOADING
+            }
+            .setOnPauseListener {
+                currentStatus = STATUS_PAUSED
+            }
+            .setOnCancelListener(object : OnCancelListener {
+                override fun onCancel() {
+                    currentStatus = STATUS_CANCELLED
+                    Log.e(TAG, "onCancel executed")
+                }
+            })
+            .setOnProgressListener { progress ->
+                val value = (progress.currentBytes / progress.totalBytes) * 100
+                progressBar.progress = value.toInt()
+                Log.d(TAG, "OnProgress -> " + value)
+            }
+            .start(object : OnDownloadListener {
+                override fun onDownloadComplete() {
+                    progressBar.visibility = View.GONE
+                    cont.resume(Unit, {})
+                }
+
+                override fun onError(error: com.downloader.Error?) {
+                    currentStatus = STATUS_ERROR
+                    error?.connectionException?.printStackTrace()
+                    Log.e(TAG, error?.serverErrorMessage + ", " + error?.isConnectionError + ", ")
+                }
+            })
     }
 }
